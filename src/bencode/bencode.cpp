@@ -11,44 +11,40 @@ static void _free(BenValue *v) {
     switch (v->type) {
     case BEN_STR:
         delete v->s;
-        v->s = NULL;
-        return;
+        break;
     case BEN_LIST:
         delete v->l;
-        v->l = NULL;
-        return;
+        break;
     case BEN_DICT:
-        delete v->l;
-        v->l = NULL;
-        return;
+        delete v->d;
+        break;
     default:
-        return;
+        break;
     }
+    v->type = BEN_NULL;
+    v->s = nullptr;
 }
 BenValue::~BenValue() { _free(this); }
 BenValue::BenValue(const BenValue &v) : type(v.type) {
     switch (type) {
-    case BEN_INT:
-        n = v.n;
-        break;
     case BEN_STR:
         s = new string(*v.s);
-        break;
+        return;
     case BEN_LIST:
         l = new vector<BenValue>(*v.l);
-        break;
+        return;
+    case BEN_DICT:
+        d = new map<string, BenValue>(*v.d);
+        return;
+    default:
+        n = v.n;
+        return;
     }
 }
 BenValue::BenValue(BenValue &&v) : type(v.type) {
-    switch (type) {
-    case BEN_INT:
-        n = v.n;
-        break;
-    default:
-        s = v.s;
-        v.s = nullptr;
-        break;
-    }
+    s = v.s;
+    v.type = BEN_NULL;
+    v.s = nullptr;
 }
 static int ben_parse_value(BenContext *c, BenValue *v);
 
@@ -72,20 +68,22 @@ static int64_t _parse_int(BenContext *c, BenValue *v) {
     c->bencode = end + 1;
     return BEN_PARSE_OK;
 }
-
-static int64_t _parse_str(BenContext *c, BenValue *v) {
-    _free(v);
+static int64_t _parse_str_raw(BenContext *c, string *s) {
     char *end;
     int64_t len = strtoll(c->bencode, &end, 10);
     if (*end != ':' || len < 0 ||
         ((len == LLONG_MAX || len == LLONG_MIN) && errno == ERANGE) ||
         static_cast<int64_t>(strlen(end + 1)) < len)
         return BEN_PARSE_INVALID_VALUE;
-    v->s = new string;
-    v->s->assign(end + 1, len);
+    s->assign(end + 1, len);
     c->bencode = end + len + 1;
-    v->type = BEN_STR;
     return BEN_PARSE_OK;
+}
+static int64_t _parse_str(BenContext *c, BenValue *v) {
+    _free(v);
+    v->type = BEN_STR;
+    v->s = new string;
+    return _parse_str_raw(c, v->s);
 }
 static int64_t _parse_list(BenContext *c, BenValue *v) {
     _free(v);
@@ -95,25 +93,36 @@ static int64_t _parse_list(BenContext *c, BenValue *v) {
 
     BenValue *child = new BenValue;
     int ret;
-    while ((ret = ben_parse_value(c, child)) == BEN_PARSE_OK) {
+    while (*c->bencode != 'e' &&
+           (ret = ben_parse_value(c, child)) == BEN_PARSE_OK)
         v->l->push_back(std::move(*child));
-        delete child;
-        child = nullptr;
-        child = new BenValue;
-    }
     delete child;
     child = nullptr;
 
-    if (ret != BEN_PARSE_END)
-        return ret;
     ++c->bencode;
-    return BEN_PARSE_OK;
+    return ret;
 }
-static int64_t _parse_dict(BenContext *c, BenValue *v) {}
+static int64_t _parse_dict(BenContext *c, BenValue *v) {
+    _free(v);
+    ++c->bencode;
+    v->type = BEN_DICT;
+    v->d = new map<string, BenValue>;
+
+    string key;
+    BenValue *value = new BenValue;
+    int ret = BEN_PARSE_OK;
+    while (*c->bencode != 'e' &&
+           (ret = _parse_str_raw(c, &key)) == BEN_PARSE_OK &&
+           (ret = ben_parse_value(c, value)) == BEN_PARSE_OK)
+        v->d->insert(std::make_pair(std::move(key), std::move(*value)));
+    delete value;
+    value = nullptr;
+
+    ++c->bencode;
+    return ret;
+}
 static int ben_parse_value(BenContext *c, BenValue *v) {
     switch (*c->bencode) {
-    case 'e':
-        return BEN_PARSE_END;
     case 'i':
         return _parse_int(c, v);
     case 'l':

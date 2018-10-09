@@ -1,27 +1,33 @@
 #ifndef BENCODE_H_
 #define BENCODE_H_
 
+#include <map>
 #include <string>
 #include <vector>
+
 using std::string;
 using std::vector;
+using std::map;
+
 enum BenType { BEN_NULL, BEN_STR, BEN_INT, BEN_LIST, BEN_DICT };
 enum {
     BEN_PARSE_OK = 0,
-    BEN_PARSE_END,
     BEN_PARSE_EXPECT_VALUE,
-    BEN_PARSE_INVALID_VALUE
+    BEN_PARSE_INVALID_VALUE,
+    BEN_PARSE_MISS_KEY,
+    BEN_PARSE_MISS_COLON
 };
 struct BenValue {
     BenType type = BEN_NULL;
     union {
         int64_t n;
-        string *s;
+        string *s = nullptr;
         vector<BenValue> *l;
+        map<string, BenValue> *d;
     };
     BenValue() = default;
-    BenValue(const BenValue& v);
-    BenValue(BenValue&& v);
+    BenValue(const BenValue &v);
+    BenValue(BenValue &&v);
     ~BenValue();
 };
 struct BenContext {
