@@ -59,23 +59,27 @@ string ben_get_str(const BenValue *v) {
 static int64_t _parse_int(BenContext *c, BenValue *v) {
     _free(v);
     char *end;
-    c->bencode++;
+    ++c->bencode;
+    --c->len;
     v->n = strtoll(c->bencode, &end, 10);
     if (*end != 'e' ||
         ((v->n == LLONG_MAX || v->n == LLONG_MIN) && errno == ERANGE))
         return BEN_PARSE_INVALID_VALUE;
     v->type = BEN_INT;
+    c->len -= end - c->bencode;
     c->bencode = end + 1;
     return BEN_PARSE_OK;
 }
 static int64_t _parse_str_raw(BenContext *c, string *s) {
     char *end;
     int64_t len = strtoll(c->bencode, &end, 10);
+    c->len -= end - c->bencode;
     if (*end != ':' || len < 0 ||
         ((len == LLONG_MAX || len == LLONG_MIN) && errno == ERANGE) ||
-        static_cast<int64_t>(strlen(end + 1)) < len)
+        static_cast<int64_t>(c->len) < len)
         return BEN_PARSE_INVALID_VALUE;
     s->assign(end + 1, len);
+    c->len -= len;
     c->bencode = end + len + 1;
     return BEN_PARSE_OK;
 }
@@ -88,6 +92,7 @@ static int64_t _parse_str(BenContext *c, BenValue *v) {
 static int64_t _parse_list(BenContext *c, BenValue *v) {
     _free(v);
     ++c->bencode;
+    --c->len;
     v->type = BEN_LIST;
     v->l = new vector<BenValue>;
 
@@ -100,11 +105,13 @@ static int64_t _parse_list(BenContext *c, BenValue *v) {
     child = nullptr;
 
     ++c->bencode;
+    --c->len;
     return ret;
 }
 static int64_t _parse_dict(BenContext *c, BenValue *v) {
     _free(v);
     ++c->bencode;
+    --c->len;
     v->type = BEN_DICT;
     v->d = new map<string, BenValue>;
 
@@ -119,6 +126,7 @@ static int64_t _parse_dict(BenContext *c, BenValue *v) {
     value = nullptr;
 
     ++c->bencode;
+    --c->len;
     return ret;
 }
 static int ben_parse_value(BenContext *c, BenValue *v) {
@@ -135,9 +143,10 @@ static int ben_parse_value(BenContext *c, BenValue *v) {
         return BEN_PARSE_INVALID_VALUE;
     }
 }
-int64_t BenParse(BenValue *v, const char *bencode) {
+int64_t BenParse(BenValue *v, const char *bencode,size_t len) {
     BenContext c;
     assert(v != nullptr);
     c.bencode = bencode;
+    c.len = len;
     return ben_parse_value(&c, v);
 }

@@ -32,9 +32,10 @@ struct BenValue {
 };
 struct BenContext {
     const char *bencode;
+    size_t len;
 };
 
-int64_t BenParse(BenValue *v, const char *bencode);
+int64_t BenParse(BenValue *v, const char *bencode, size_t len);
 BenType ben_get_type(const BenValue *v);
 int64_t ben_get_int(const BenValue *v);
 string ben_get_str(const BenValue *v);
